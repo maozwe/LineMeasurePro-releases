@@ -1,0 +1,12 @@
+{
+  "version": "1.2.0",
+  "tag": "v1.2.0",
+  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/v1.2.0",
+  "artifacts": {
+    "installer": {
+      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/v1.2.0/LineMeasurePro-v1.2.0.zip",
+      "sha256": "aa71412645e260b586f1f304fdc98851e9b34296088957482fa82f670f4775dd",
+      "size": 6140722
+    }
+  }
+}
