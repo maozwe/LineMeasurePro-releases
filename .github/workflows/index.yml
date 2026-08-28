@@ -1,0 +1,49 @@
+name: Rebuild file index
+
+# Dropping files into files/ through the GitHub web UI is the normal way this
+# repo gets content, so the index has to rebuild itself rather than depend on
+# anyone running a script.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'files/**'
+      - 'tools/build_index.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A burst of uploads through the web UI is one push per file. Without this they
+# race each other and all but one fail to push.
+concurrency:
+  group: rebuild-index
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build index.json
+        run: python tools/build_index.py
+
+      - name: Commit if the tree actually changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Staged before comparing: `git diff` does not see an untracked file,
+          # so a first-ever index.json would report "unchanged", skip the commit
+          # and pass green having written nothing.
+          git add index.json
+          if git diff --cached --quiet -- index.json; then
+            echo "index.json unchanged"
+            exit 0
+          fi
+          git commit -m "Rebuild file index"
+          git push
