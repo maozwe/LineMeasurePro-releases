@@ -5,7 +5,7 @@
   "artifacts": {
     "installer": {
       "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/civicflow-v1.20260829/CivicFlow-civicflow-v1.20260829.zip",
-      "sha256": "\988170728aa6d86696acbe54345a800278782243e4fa5c2956851e6c4fa588f1",
+      "sha256": "988170728aa6d86696acbe54345a800278782243e4fa5c2956851e6c4fa588f1",
       "size": 52367305
     }
   }
