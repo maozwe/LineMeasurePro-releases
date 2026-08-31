@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef1f1">
+<title>BillFlow</title>
+
+<!--
+  BillFlow on the web — for iPhone, and for anyone without the Android app.
+
+  THE ONE THING THAT MATTERS HERE
+  The pairing code IS the decryption key. It arrives in the URL FRAGMENT
+  (#c=...), which browsers never send to a server: not to GitHub Pages, not in a
+  Referer header, not in any log. The page reads it with JavaScript, derives the
+  same two values the app derives, fetches the sealed blob, and opens it on the
+  device.
+
+  Put the code in the query string instead (?c=...) and it would be handed to
+  GitHub with every request, and the encryption would be decoration.
+
+  No frameworks and no libraries. HKDF-SHA256 and AES-GCM are both in WebCrypto,
+  which Safari has had for years — checked against the desktop's own output byte
+  for byte before this file was written.
+-->
+
+<style>
+  :root {
+    --paper:    #eef1f1;
+    --surface:  #ffffff;
+    --surface2: #f4f6f6;
+    --ink:      #16201f;
+    --ink-soft: #4a5654;
+    --ink-faint:#8a9694;
+    --rule:     #dde3e2;
+    --rule-soft:#e9eeed;
+    --accent:   #1f6b5e;
+    --clay:     #a8503c;
+    --sage:     #2f7d5e;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Rubik, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:    #121817;
+      --surface:  #1a2221;
+      --surface2: #161d1c;
+      --ink:      #e8eeec;
+      --ink-soft: #aebab8;
+      --ink-faint:#7d8a88;
+      --rule:     #26302e;
+      --rule-soft:#1f2827;
+      --accent:   #63b3a2;
+      --clay:     #d98b74;
+      --sage:     #6bbf95;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+
+  /* ── the bar, the same three controls as the app ─────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--surface); border-bottom: 1px solid var(--rule);
+    padding: calc(8px + env(safe-area-inset-top)) 14px 8px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .mark { width: 26px; height: 22px; flex: none; }
+  .mark i { display: block; width: 4px; background: var(--accent); border-radius: 1px; }
+  .mark { display: flex; align-items: flex-end; gap: 3px; }
+  .htxt { flex: 1; min-width: 0; }
+  .hsub { font-size: 11px; font-weight: 600; color: var(--ink-faint);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .htitle { font-size: 17px; font-weight: 700; }
+  .hwhen { font-size: 10.5px; color: var(--ink-faint); text-align: left; flex: none; }
+  .hbtn {
+    background: none; border: 0; color: var(--ink-faint); font: inherit;
+    font-size: 12px; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  }
+  .hbtn:active { background: var(--surface2); }
+
+  /* ── screens ─────────────────────────────────────────────────────── */
+  main { padding-bottom: 84px; }
+  .headline { padding: 18px 18px 12px; }
+  .headline .lbl { font-size: 12px; color: var(--ink-faint); }
+  .headline .val { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin-top: 2px; }
+  .headline .cap { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+  .bar { height: 5px; background: var(--rule); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+  .pill {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    color: var(--clay); background: color-mix(in srgb, var(--clay) 14%, transparent);
+    padding: 2px 8px; border-radius: 999px;
+  }
+
+  .seclabel {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 18px 6px; font-size: 11.5px; font-weight: 700;
+    color: var(--ink-faint); letter-spacing: .02em;
+  }
+  .panel { background: var(--surface); border-block: 1px solid var(--rule); }
+
+  .row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 12px 18px; background: none; border: 0; font: inherit;
+    color: inherit; text-align: start; cursor: pointer;
+  }
+  .row + .row, .sub .row { border-top: 1px solid var(--rule-soft); }
+  .row .t { font-size: 13.5px; font-weight: 700; }
+  .row .m { font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
+  .row .grow { flex: 1; min-width: 0; }
+  .row .fig { font-size: 13px; font-weight: 700; }
+  .row .fig.small { font-size: 11px; font-weight: 600; color: var(--clay); }
+  .chev { color: var(--ink-faint); font-size: 12px; flex: none; transition: transform .15s; }
+  .row[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  .sub { background: var(--surface2); }
+  .sub .sub { background: var(--surface); }
+
+  .item { padding: 10px 18px; border-top: 1px solid var(--rule-soft);
+          display: flex; align-items: center; gap: 10px; }
+  .item .d { font-size: 12.5px; font-weight: 600; }
+  .item .s { font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
+  .item .o { font-size: 11px; color: var(--clay); font-weight: 600; margin-top: 2px; }
+
+  .chips { display: flex; gap: 7px; overflow-x: auto; padding: 6px 14px 8px;
+           scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; font: inherit; font-size: 12px; font-weight: 600;
+          padding: 6px 12px; border-radius: 999px; cursor: pointer;
+          background: var(--surface); color: var(--ink-soft);
+          border: 1px solid var(--rule); }
+  .chip[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .seg { display: flex; gap: 3px; margin: 8px 14px 0; padding: 3px;
+         background: var(--surface2); border: 1px solid var(--rule); border-radius: 9px; }
+  .seg button { flex: 1; font: inherit; font-size: 13px; font-weight: 700;
+                padding: 8px 0; border: 1px solid transparent; border-radius: 7px;
+                background: none; color: var(--ink-soft); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--surface);
+                border-color: var(--accent); color: var(--accent); }
+
+  .note { padding: 56px 32px; text-align: center; color: var(--ink-soft);
+          font-size: 14px; white-space: pre-line; line-height: 1.7; }
+
+  /* ── tabs ────────────────────────────────────────────────────────── */
+  nav {
+    position: fixed; inset-inline: 0; bottom: 0; z-index: 20;
+    display: flex; background: var(--surface); border-top: 1px solid var(--rule);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1; background: none; border: 0; font: inherit; cursor: pointer;
+    padding: 8px 0 9px; color: var(--ink-faint); font-size: 11px; font-weight: 600;
+    border-top: 2px solid transparent; margin-top: -1px;
+  }
+  nav button[aria-pressed="true"] { color: var(--accent); border-top-color: var(--accent); }
+  nav .ico { display: block; font-size: 17px; line-height: 1.25; }
+
+  /* ── the pairing screen ──────────────────────────────────────────── */
+  .pair { padding: 30px 24px 40px; max-width: 30rem; margin: 0 auto; }
+  .pair h1 { font-size: 25px; font-weight: 800; margin-bottom: 8px; }
+  .pair p { color: var(--ink-soft); font-size: 14.5px; margin-bottom: 18px; }
+  .pair label { display: block; font-size: 12px; color: var(--ink-faint); margin-bottom: 5px; }
+  .pair input {
+    width: 100%; font: inherit; font-size: 15px; direction: ltr; text-align: left;
+    padding: 13px 14px; border-radius: 10px; border: 1px solid var(--rule);
+    background: var(--surface); color: var(--ink); letter-spacing: .5px;
+  }
+  .pair button.go {
+    width: 100%; margin-top: 12px; font: inherit; font-size: 15px; font-weight: 700;
+    padding: 14px; border-radius: 10px; border: 0;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .pair .hint { margin-top: 18px; font-size: 12.5px; color: var(--ink-faint);
+                background: var(--surface2); border: 1px solid var(--rule);
+                border-radius: 10px; padding: 12px 14px; }
+  .err { color: var(--clay); font-size: 13px; margin-top: 10px; font-weight: 600; }
+  .applink {
+    display: block; margin-top: 14px; text-align: center; font-size: 14px;
+    font-weight: 700; color: var(--accent); text-decoration: none;
+    border: 1px solid var(--accent); border-radius: 10px; padding: 12px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+"use strict";
+
+// ── the same two derivations the desktop and the app use ──────────────
+//
+// HKDF-SHA256 with a salt of 32 zero bytes. Python's cryptography library uses
+// HashLen zeros when salt=None, per RFC 5869, and WebCrypto insists the salt be
+// spelled out — so it is. Verified against the desktop's own output before this
+// file existed; one byte of difference here and nothing decrypts.
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function decodeCode(text) {
+  const clean = String(text || "").toUpperCase().replace(/[^A-Z2-7]/g, "");
+  if (clean.length < 32) return null;
+  let bits = 0, value = 0;
+  const out = [];
+  for (const ch of clean) {
+    const idx = B32.indexOf(ch);
+    if (idx < 0) return null;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) { bits -= 8; out.push((value >> bits) & 0xff); }
+  }
+  return new Uint8Array(out);
+}
+
+async function derive(secret, info, bytes) {
+  const base = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32),
+      info: new TextEncoder().encode(info) },
+    base, bytes * 8);
+  return new Uint8Array(bits);
+}
+
+const hex = b => [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+
+// ── where the sealed snapshot lives ───────────────────────────────────
+//
+// The same Firestore document the app reads, by the same derived id. The API
+// key is not a secret — it names the project to Google, and what may be read is
+// decided by the rules. The confidentiality is the encryption.
+const PROJECT = "civicflow-field-wct";
+const API_KEY = "AIzaSyCgaYImsx8hDt54GoDC73vJiIJJKZmHsA0";
+
+const Fail = { notPublished: 1, offline: 2, serverError: 3, revoked: 4, wrongKey: 5 };
+
+async function fetchSnapshot(secret) {
+  const channel = hex(await derive(secret, "civicflow-field-channel", 16));
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT}` +
+              `/databases/(default)/documents/snapshots/${channel}?key=${API_KEY}`;
+  let res;
+  try {
+    res = await fetch(url, { cache: "no-store" });
+  } catch (e) {
+    return { failure: Fail.offline };
+  }
+  if (res.status === 404) return { failure: Fail.notPublished };
+  if (!res.ok) return { failure: Fail.serverError };
+
+  let doc;
+  try { doc = await res.json(); } catch (e) { return { failure: Fail.serverError }; }
+  const b64 = doc?.fields?.blob?.stringValue;
+
+  // A document with an emptied blob is someone who was disconnected from the
+  // desktop — not the same as never having been sent anything.
+  if (!b64) return { failure: Fail.revoked };
+
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "raw", await derive(secret, "civicflow-field-key", 32), "AES-GCM", false, ["decrypt"]);
+  try {
+    const clear = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: raw.slice(0, 12) }, key, raw.slice(12));
+    const snap = JSON.parse(new TextDecoder().decode(clear));
+    const secs = Number(doc?.fields?.updated?.integerValue);
+    snap._at = Number.isFinite(secs) ? new Date(secs * 1000) : null;
+    return { snap };
+  } catch (e) {
+    return { failure: Fail.wrongKey };
+  }
+}
+
+// ── formatting, matching the app exactly ──────────────────────────────
+const nf0 = new Intl.NumberFormat("he-IL", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const nf2 = new Intl.NumberFormat("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = v => `₪ ${nf0.format(Number(v) || 0)}`;
+const qty   = v => nf2.format(Number(v) || 0);
+const pct   = v => `${nf2.format(Number(v) || 0)}%`;
+const moneyDelta = v => (Number(v) < 0 ? `פחות ${money(Math.abs(v))}` : `יותר ${money(Math.abs(v))}`);
+// Hebrew counts one thing differently from many; "1 סעיפים" reads as a bug.
+const sections = n => n === 1 ? "סעיף אחד" : n === 2 ? "שני סעיפים" : `${n} סעיפים`;
+const overs    = n => n === 1 ? "אחד חורג" : `${n} חורגים`;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// ── state ─────────────────────────────────────────────────────────────
+const STORE = "billflow.code";
+let SNAP = null, TAB = 0, OPEN = null, BY_BUILDING = true, CHIP = null;
+
+const TABS = [
+  { icon: "📊", label: "הגשה" },
+  { icon: "📉", label: "חריגות" },
+  { icon: "✅", label: "פיקוח" },
+  { icon: "🧾", label: "חשבונות" },
+];
+
+const $ = id => document.getElementById(id);
+const root = () => $("root");
+
+function mark() {
+  return `<span class="mark" aria-hidden="true">
+    <i style="height:9px"></i><i style="height:16px"></i><i style="height:12px"></i><i style="height:20px"></i>
+  </span>`;
+}
+
+// ── the pairing screen ────────────────────────────────────────────────
+function renderPair(message) {
+  const android = /android/i.test(navigator.userAgent);
+  root().innerHTML = `
+    <header>${mark()}<div class="htxt"><div class="htitle">BillFlow</div></div></header>
+    <div class="pair">
+      <h1>חיבור למחשב</h1>
+      <p>הזן את קוד החיבור שמופיע בתוכנה במחשב, במסך "טלפון".</p>
+      <label for="code">קוד החיבור</label>
+      <input id="code" inputmode="latin" autocapitalize="characters" autocomplete="off"
+             spellcheck="false" placeholder="AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-GGGG-HHHH">
+      <button class="go" id="go">התחבר</button>
+      ${message ? `<div class="err">${esc(message)}</div>` : ""}
+      ${android ? `<a class="applink" id="openapp" href="#">פתח באפליקציית BillFlow</a>` : ""}
+      <div class="hint">
+        הקוד הזה הוא גם המפתח. הנתונים נשלחים מוצפנים, ורק מי שקיבל את הקוד
+        יכול לפתוח אותם — הוא נשאר בדפדפן שלך ולא נשלח לשום שרת.
+      </div>
+    </div>`;
+
+  $("go").onclick = () => {
+    const raw = $("code").value;
+    if (!decodeCode(raw)) { renderPair("הקוד אינו תקין. בדוק שהעתקת אותו במלואו."); return; }
+    localStorage.setItem(STORE, raw);
+    load(raw);
+  };
+  $("code").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
+  const app = $("openapp");
+  if (app) app.onclick = e => {
+    e.preventDefault();
+    const c = ($("code").value || localStorage.getItem(STORE) || "").trim();
+    if (c) location.href = `civicflow://pair?c=${encodeURIComponent(c)}`;
+  };
+}
+
+// ── the four screens ──────────────────────────────────────────────────
+function headline({ label, value, caption, progress, clay }) {
+  return `<div class="headline">
+    <div class="lbl">${esc(label)}</div>
+    <div class="val num"${clay ? ' style="color:var(--clay)"' : ""}>${esc(value)}</div>
+    ${caption ? `<div class="cap">${caption}</div>` : ""}
+    ${progress != null ? `<div class="bar"><i style="width:${Math.max(0, Math.min(1, progress)) * 100}%"></i></div>` : ""}
+  </div>`;
+}
+const seclabel = (t, r = "") =>
+  `<div class="seclabel"><span>${esc(t)}</span><span>${r}</span></div>`;
+const note = t => `<div class="note">${esc(t)}</div>`;
+
+function rowHtml(key, title, meta, fig, over, open) {
+  return `<button class="row" data-key="${esc(key)}" aria-expanded="${open}">
+    <span class="chev">▸</span>
+    <span class="grow"><span class="t">${esc(title)}</span><br><span class="m">${esc(meta)}</span></span>
+    <span style="text-align:end">
+      <span class="fig num">${esc(fig)}</span>
+      ${over ? `<br><span class="fig small num">${esc(over)}</span>` : ""}
+    </span>
+  </button>`;
+}
+
+function itemHtml(it) {
+  const isOver = !!it.is_over;
+  return `<div class="item">
+    <span class="grow">
+      <span class="d">${esc(it.desc || it.code)}</span>
+      <div class="s">${esc(it.code)} · <span class="num">${qty(it.billed_qty)}</span> ${esc(it.unit || "")} מתוך <span class="num">${qty(it.contract_qty)}</span></div>
+      ${isOver ? `<div class="o">חורג ב-<span class="num">${qty(it.over_qty)}</span> ${esc(it.unit || "")} · <span class="num">${money(it.over_total)}</span></div>` : ""}
+    </span>
+    ${isOver ? `<span class="pill num">+${pct(it.over_pct)}</span>` : ""}
+    <span class="fig num">${money(it.line_total)}</span>
+  </div>`;
+}
+
+function chapterHtml(g, nested) {
+  const key = "c:" + g.label;
+  const open = OPEN === key;
+  const meta = `${sections((g.items || []).length)} · ${pct(g.pct)}` +
+               (g.over_count > 0 ? ` · ${overs(g.over_count)}` : "");
+  return rowHtml(key, g.label, meta, money(g.billed),
+                 g.over_total > 0 ? money(g.over_total) : null, open) +
+    (open ? `<div class="sub">${(g.items || []).map(itemHtml).join("")}</div>` : "");
+}
+
+function screenSubmitted() {
+  const s = SNAP, t = s.totals || {};
+  if (!(s.groups || []).length) return note("אין עדיין נתונים בחשבון הזה.");
+  const hasB = (s.buildings || []).length > 0;
+  const byB = hasB && BY_BUILDING;
+  const byLabel = Object.fromEntries((s.groups || []).map(g => [g.label, g]));
+
+  let list = "";
+  if (byB) {
+    for (const b of s.buildings) {
+      const key = "b:" + b.label;
+      const open = OPEN === key;
+      const chapters = (b.chapters || []).map(l => byLabel[l]).filter(Boolean);
+      const meta = `${sections(chapters.length)} · ${pct(b.pct)}` +
+                   (b.over_count > 0 ? ` · ${overs(b.over_count)}` : "");
+      list += rowHtml(key, `מבנה ${b.label}`, meta, money(b.billed),
+                      b.over_total > 0 ? money(b.over_total) : null, open);
+      if (open) list += `<div class="sub">${chapters.map(g => chapterHtml(g, true)).join("")}</div>`;
+    }
+  } else {
+    list = (s.groups || []).map(g => chapterHtml(g, false)).join("");
+  }
+
+  return headline({
+      label: "סה״כ הוגש, אחרי הנחה",
+      value: money(t.billed),
+      caption: `<span class="num">${pct(t.pct)}</span> מהחוזה · <span class="num">${money(t.contract)}</span>`,
+      progress: t.contract ? t.billed / t.contract : 0,
+    }) +
+    (t.over_total > 0
+      ? `<div style="padding:0 18px 6px"><span class="pill num">חריגה ${money(t.over_total)}</span>
+         <span style="font-size:11.5px;color:var(--ink-faint)">מעבר לכמויות החוזה</span></div>` : "") +
+    (hasB ? `<div class="seg">
+        <button data-seg="b" aria-pressed="${byB}">מבנה</button>
+        <button data-seg="c" aria-pressed="${!byB}">פרק</button>
+      </div>` : "") +
+    seclabel(byB ? "לפי מבנה" : "לפי פרק",
+             `<span style="font-size:11.5px;color:var(--ink-faint)">${sections(t.item_count || 0)}</span>`) +
+    `<div class="panel">${list}</div>`;
+}
+
+function screenOverruns() {
+  const s = SNAP, all = s.over || [];
+  if (!all.length) return note("אין סעיפים שחרגו מכמות החוזה.\nכל הכמויות בתוך המסגרת.");
+
+  const byB = (s.buildings || []).length > 0;
+  const keyOf = o => byB ? `מבנה ${o.building}` : o.group;
+  const groups = [...new Set(all.map(keyOf))];
+  const shown = CHIP == null ? all : all.filter(o => keyOf(o) === CHIP);
+  const total = shown.reduce((a, o) => a + (Number(o.over_value) || 0), 0);
+
+  return headline({
+      label: "שווי החריגה, אחרי הנחה", value: money(total), clay: true,
+      caption: `${sections(shown.length)} ${shown.length === 1 ? "חורג" : "חורגים"}` +
+               (CHIP == null ? " בכל הפרויקט" : ` ב${esc(CHIP)}`),
+    }) +
+    `<div class="chips">
+      <button class="chip" data-chip="" aria-pressed="${CHIP == null}">הכול</button>
+      ${groups.map(g => `<button class="chip" data-chip="${esc(g)}" aria-pressed="${CHIP === g}">${esc(g)}</button>`).join("")}
+    </div>` +
+    `<div class="panel">${shown.map(o => `<div class="item">
+        <span class="grow">
+          <span class="d">${esc(o.desc || o.code)}</span>
+          <div class="s">${esc(o.code)} · ${esc(o.group || "")}${o.building ? " · מבנה " + esc(o.building) : ""}</div>
+          <div class="o">חורג ב-<span class="num">${qty(o.over_qty)}</span> ${esc(o.unit || "")}
+            מתוך <span class="num">${qty(o.contract_qty)}</span></div>
+        </span>
+        <span class="pill num">+${pct(o.over_pct)}</span>
+        <span class="fig num" style="color:var(--clay)">${money(o.over_value)}</span>
+      </div>`).join("")}</div>`;
+}
+
+function screenApproved() {
+  const s = SNAP, t = s.totals || {};
+  if (t.approved == null)
+    return note("עדיין אין נתוני פיקוח בחשבון הזה.\nהם יופיעו כאן ברגע שיוזנו בתוכנה במחשב.");
+
+  const reviewed = (s.groups || []).filter(g => g.approved != null);
+  const pending  = (s.groups || []).filter(g => g.approved == null);
+
+  return headline({
+      label: "אושר מתוך מה שהוגש",
+      value: money(t.approved),
+      caption: `הפרש מול ההגשה · <span class="num">${moneyDelta(t.gap || 0)}</span>`,
+      progress: t.billed ? t.approved / t.billed : 0,
+    }) +
+    seclabel("לפי אותה חלוקה כמו בהגשה") +
+    `<div class="panel">${reviewed.map(g => {
+        const gap = (Number(g.approved) || 0) - (Number(g.billed) || 0);
+        // A rounding-sized difference is not a reduction. Treating it as one
+        // would put a warning colour on a chapter the supervisor passed in
+        // full — and "יותר ₪ 0" is not a sentence anyone should read.
+        const cut = gap < -0.5;
+        return `<div class="row" style="cursor:default">
+          <span class="grow"><span class="t">${esc(g.label)}</span><br>
+            <span class="m">${cut ? `הופחת <span class="num">${money(Math.abs(gap))}</span>` : "אושר במלואו"}</span></span>
+          <span style="text-align:end">
+            <span class="fig num" style="color:${cut ? "var(--clay)" : "var(--sage)"}">${money(g.approved)}</span>
+            <br><span class="m num">הוגש ${money(g.billed)}</span>
+          </span></div>`;
+      }).join("")}</div>` +
+    (pending.length ? seclabel("טרם נבדק על ידי הפיקוח") +
+      `<div class="panel">${pending.map(g => `<div class="row" style="cursor:default">
+          <span class="grow"><span class="t">${esc(g.label)}</span><br>
+            <span class="m">הוגש <span class="num">${money(g.billed)}</span></span></span>
+          <span class="fig" style="color:var(--ink-faint)">טרם נבדק</span></div>`).join("")}</div>` : "");
+}
+
+function screenSubmissions() {
+  const subs = SNAP.submissions || [];
+  if (!subs.length) return note("עדיין לא נרשמו חשבונות בפרויקט הזה.");
+  return seclabel("חשבונות שהוגשו", `<span style="font-size:11.5px;color:var(--ink-faint)">${subs.length}</span>`) +
+    `<div class="panel">${subs.map(s => `<div class="row" style="cursor:default">
+        <span class="grow"><span class="t">חשבון ${esc(s.num ?? "—")}</span><br>
+          <span class="m">חודש ביצוע · ${esc(s.date || "—")}</span></span>
+        <span style="text-align:end">
+          <span class="fig num">${money(s.contractor)}</span>
+          ${s.supervisor ? `<br><span class="fig small num" style="color:var(--ink-faint)">פיקוח ${money(s.supervisor)}</span>` : ""}
+        </span></div>`).join("")}</div>`;
+}
+
+// ── the shell ─────────────────────────────────────────────────────────
+function render() {
+  const when = SNAP._at
+    ? new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(SNAP._at)
+    : "";
+  const body = [screenSubmitted, screenOverruns, screenApproved, screenSubmissions][TAB]();
+
+  root().innerHTML = `
+    <header>
+      ${mark()}
+      <div class="htxt">
+        <div class="hsub">${esc(SNAP.project || "")}</div>
+        <div class="htitle">${esc(TABS[TAB].label)}</div>
+      </div>
+      ${when ? `<div class="hwhen">עודכן<br><span class="num">${esc(when)}</span></div>` : ""}
+      <button class="hbtn" id="btnRefresh" title="רענן">↻</button>
+      <button class="hbtn" id="btnOut" title="נתק">יציאה</button>
+    </header>
+    <main>${body}</main>
+    <nav>${TABS.map((t, i) => `<button data-tab="${i}" aria-pressed="${i === TAB}">
+        <span class="ico">${t.icon}</span>${esc(t.label)}</button>`).join("")}</nav>`;
+
+  root().querySelectorAll("nav button").forEach(b =>
+    b.onclick = () => { TAB = +b.dataset.tab; OPEN = null; CHIP = null; render(); });
+  root().querySelectorAll(".row[data-key]").forEach(b =>
+    b.onclick = () => { OPEN = OPEN === b.dataset.key ? null : b.dataset.key; render(); });
+  root().querySelectorAll("[data-seg]").forEach(b =>
+    b.onclick = () => { BY_BUILDING = b.dataset.seg === "b"; OPEN = null; render(); });
+  root().querySelectorAll("[data-chip]").forEach(b =>
+    b.onclick = () => { CHIP = b.dataset.chip || null; render(); });
+
+  $("btnRefresh").onclick = () => load(localStorage.getItem(STORE));
+  $("btnOut").onclick = () => {
+    if (!confirm("לנתק את הפרויקט מהדפדפן הזה?")) return;
+    localStorage.removeItem(STORE);
+    location.hash = "";
+    renderPair();
+  };
+}
+
+const MESSAGES = {
+  [Fail.notPublished]: 'הפרויקט מחובר, אבל עדיין לא נשלחו אליו נתונים.\n\n' +
+    'במחשב: בסרגל הצדדי "טלפון" ← "רענן חשבון לאפליקציה".',
+  [Fail.offline]: "אין חיבור לאינטרנט.\nהנתונים מגיעים דרך הרשת, אז צריך קליטה כדי לקבל אותם.",
+  [Fail.serverError]: "השרת לא זמין כרגע. נסה שוב בעוד רגע.",
+  [Fail.revoked]: "הגישה שלך לפרויקט הזה הופסקה.\n\n" +
+    "מי שמנהל את הפרויקט ניתק אותך.\nאם זו טעות — בקש ממנו ברקוד חדש.",
+  [Fail.wrongKey]: "הקוד הזה לא מתאים לנתונים שהתקבלו.\nבקש קוד חדש.",
+};
+
+async function load(rawCode) {
+  const secret = decodeCode(rawCode);
+  if (!secret) { renderPair(); return; }
+
+  root().innerHTML = `<header>${mark()}<div class="htxt"><div class="htitle">BillFlow</div></div></header>
+                      <div class="note">טוען…</div>`;
+  const { snap, failure } = await fetchSnapshot(secret);
+  if (snap) { SNAP = snap; TAB = 0; OPEN = null; CHIP = null; render(); return; }
+
+  // Same distinction the app makes: only a key that does not fit sends you back
+  // to pairing. The rest are states of a connection that is working.
+  if (failure === Fail.wrongKey) { localStorage.removeItem(STORE); renderPair(MESSAGES[failure]); return; }
+  root().innerHTML = `
+    <header>${mark()}<div class="htxt"><div class="htitle">BillFlow</div></div>
+      <button class="hbtn" id="btnRetry">נסה שוב</button></header>
+    ${note(MESSAGES[failure] || "לא הצלחתי לטעון.")}`;
+  $("btnRetry").onclick = () => load(rawCode);
+}
+
+// ── start ─────────────────────────────────────────────────────────────
+//
+// The fragment first, then whatever was used last. Reading it and clearing it
+// keeps the code out of the address bar, out of a screenshot of the tab, and
+// out of anything the browser offers to share.
+(function start() {
+  const m = /[#&]c=([^&]+)/.exec(location.hash || "");
+  if (m) {
+    const code = decodeURIComponent(m[1]);
+    localStorage.setItem(STORE, code);
+    history.replaceState(null, "", location.pathname);
+    load(code);
+    return;
+  }
+  const saved = localStorage.getItem(STORE);
+  if (saved) load(saved); else renderPair();
+})();
+</script>
+</body>
+</html>
