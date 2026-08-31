@@ -1,12 +1,12 @@
 {
-  "version": "1.6.1",
-  "tag": "billflow-v1.6.1",
-  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/billflow-v1.6.1",
+  "version": "1.7.0",
+  "tag": "billflow-v1.7.0",
+  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/billflow-v1.7.0",
   "artifacts": {
     "apk": {
-      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/billflow-v1.6.1/BillFlow-billflow-v1.6.1.apk",
-      "sha256": "1b3560d648d1d3dd81fd69187d6b40577359bb088a9ddef7a19129d5cc3108fa",
-      "size": 72280191
+      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/billflow-v1.7.0/BillFlow-billflow-v1.7.0.apk",
+      "sha256": "1559e24909fa33a4a12a95b8a322c5a899f12cc8a78cd7a9c78cd46af3aa8dd7",
+      "size": 72099851
     }
   }
 }
