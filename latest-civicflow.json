@@ -1,12 +1,12 @@
 {
-  "version": "1.20260912",
-  "tag": "civicflow-v1.20260912",
-  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/civicflow-v1.20260912",
+  "version": "1.20260912.2",
+  "tag": "civicflow-v1.20260912.2",
+  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/civicflow-v1.20260912.2",
   "artifacts": {
     "installer": {
-      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/civicflow-v1.20260912/CivicFlow-Setup-1.20260912.exe",
-      "sha256": "5b1526d392ac3a16eda4ad2371115d7c9c81c93e44c275693be85ead199bd985",
-      "size": 40337379
+      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/civicflow-v1.20260912.2/CivicFlow-Setup-1.20260912.2.exe",
+      "sha256": "bd4ca043d71420587cd7f69ceeda5f4090bc32f1da179403a25ec8b0fed110c5",
+      "size": 40329904
     }
   }
 }
