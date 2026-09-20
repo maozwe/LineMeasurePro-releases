@@ -1,12 +1,12 @@
 {
-  "version": "1.7.1",
-  "tag": "billflow-v1.7.1",
-  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/billflow-v1.7.1",
+  "version": "2.0.0",
+  "tag": "billflow-v2.0.0",
+  "notes_url": "https://weisscivitech.com/apps/autocad-excel-calc",
   "artifacts": {
     "apk": {
-      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/billflow-v1.7.1/BillFlow-billflow-v1.7.1.apk",
-      "sha256": "a48efde2556d892b4dea938972b791f9499bd2358c733772b5f5df6475596c5b",
-      "size": 72099851
+      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.0.0/download?platform=android",
+      "sha256": "98637a062401814390b3141c1b4215f77532a95f7118abd5648fb313214f056b",
+      "size": 58053419
     }
   }
 }
