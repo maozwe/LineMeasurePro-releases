@@ -1,12 +1,12 @@
 {
-  "version": "1.20260913.2",
-  "tag": "civicflow-v1.20260913.2",
-  "notes_url": "https://github.com/maozwe/LineMeasurePro-releases/releases/tag/civicflow-v1.20260913.2",
+  "version": "1.20260920.1",
+  "tag": "civicflow-v1.20260920.1",
+  "notes_url": "https://weisscivitech.com/apps/autocad-excel-calc",
   "artifacts": {
     "installer": {
-      "url": "https://github.com/maozwe/LineMeasurePro-releases/releases/download/civicflow-v1.20260913.2/CivicFlow-Setup-1.20260913.2.exe",
-      "sha256": "d58cb4d4d84a964ed77371f0084fe6dbade9a49afe35662106e055250ff19c18",
-      "size": 40348570
+      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.20260920.1/download?platform=civicflow",
+      "sha256": "8bd704b8846a971e0b27f4d4b1441e2b03a63cbff2a00aacd6020512c607504e",
+      "size": 39597007
     }
   }
 }
