@@ -1,12 +1,12 @@
 {
-  "version": "1.20261001.3",
-  "tag": "civicflow-v1.20261001.3",
+  "version": "1.20261001.4",
+  "tag": "civicflow-v1.20261001.4",
   "notes_url": "https://weisscivitech.com/apps/autocad-excel-calc",
   "artifacts": {
     "installer": {
-      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.20261001.3/download?platform=civicflow",
-      "sha256": "ec432326e407b0d04384695495f19ca49f2ebed39a97509c27ff45337e4fdc2c",
-      "size": 40036655
+      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.20261001.4/download?platform=civicflow",
+      "sha256": "a8c0472ed763504ca234c59c1effdb9ae9148a96b4b758e4945e4a95f187bf11",
+      "size": 40033098
     }
   }
 }
