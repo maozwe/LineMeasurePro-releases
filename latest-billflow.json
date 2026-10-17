@@ -1,12 +1,12 @@
 {
-  "version": "2.3.1",
-  "tag": "billflow-v2.3.1",
+  "version": "2.4.0",
+  "tag": "billflow-v2.4.0",
   "notes_url": "https://weisscivitech.com/apps/autocad-excel-calc",
   "artifacts": {
     "apk": {
-      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.3.1/download?platform=android",
-      "sha256": "0016a5b95f3e265c9276b3863875c06211f2d4cdfcbb4cad24cdfb2b6c78a6eb",
-      "size": 58512303
+      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.4.0/download?platform=android",
+      "sha256": "d18515216b938030944f741ffe54f8a11167a1dc3c735488ef6a0a93aa4775b8",
+      "size": 59144275
     }
   }
 }
