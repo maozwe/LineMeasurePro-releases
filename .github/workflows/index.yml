@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   index:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, maoz-main00-linux]
     steps:
       - uses: actions/checkout@v4
 
