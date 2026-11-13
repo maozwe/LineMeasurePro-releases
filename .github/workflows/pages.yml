@@ -1,0 +1,114 @@
+name: Publish GitHub Pages
+
+# Static files only (app/, files/, index.json, latest*.json, README.md, and
+# the rest of the tree). No Jekyll: the committed files are copied into _site
+# and uploaded as the Pages artifact.
+#
+# "Rebuild file index" commits index.json and pushes it with the default
+# GITHUB_TOKEN. A GITHUB_TOKEN push does not start other workflows, so this
+# also runs after that workflow completes successfully. For workflow_run,
+# GITHUB_SHA is the last commit on the default branch, which already includes
+# that index.json commit. workflow_run.head_sha is the earlier commit that
+# started the index rebuild, so checkout must not pin that SHA.
+on:
+  push:
+    branches:
+      - main
+  workflow_run:
+    workflows:
+      - Rebuild file index
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+# configure-pages runs in build, so pages: write is granted here and not only
+# on deploy. id-token: write is what deploy-pages uses to mint its OIDC token.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A later run waits; it does not cancel a live one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Stage the site
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, maoz-main00]
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Stage site files
+        # Windows runner: bash is Git Bash (GNU cp). Relative paths only, so
+        # MSYS does not rewrite them.
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site
+
+          # Tracked files only. Leave out workflows and the index builder.
+          # NUL-delimited so Hebrew names under files/ are copied intact.
+          # Parent directories are created in bash so this does not depend on
+          # dirname, and the log does not call find (Windows find.exe).
+          git ls-files -z | while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/*|tools/*) continue ;;
+            esac
+            case "$path" in
+              */*) mkdir -p -- "_site/${path%/*}" ;;
+            esac
+            cp -a -- "$path" "_site/$path"
+          done
+
+          if [ -e _site/.git ] || [ -e _site/.github ] || [ -e _site/tools ]; then
+            echo "excluded path was staged into _site" >&2
+            exit 1
+          fi
+
+          echo "Staged site:"
+          missing=0
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/*|tools/*) continue ;;
+            esac
+            if [ ! -f "_site/$path" ]; then
+              echo "not staged: $path" >&2
+              missing=1
+              continue
+            fi
+            printf '%s\n' "_site/$path"
+          done < <(git ls-files -z)
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: [self-hosted, maoz-main00]
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
