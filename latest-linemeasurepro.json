@@ -1,12 +1,12 @@
 {
-  "version": "2.2.3",
-  "tag": "v2.2.3",
-  "notes_url": "https://weisscivitech.com/apps/autocad-excel-calc",
-  "artifacts": {
-    "installer": {
-      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.2.3/download?platform=linemeasurepro",
-      "sha256": "6508037ad5af0c1a418ea3d2bc61481391e62ad82f493b85aab6e25ce7221def",
-      "size": 17476846
-    }
-  }
+    "artifacts":  {
+                      "installer":  {
+                                        "url":  "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.2.4/download?platform=linemeasurepro",
+                                        "sha256":  "109293ca4c54e028bb40ff1c37939bcaec6cc340e5b5ca0706eda89453100521",
+                                        "size":  17476429
+                                    }
+                  },
+    "version":  "2.2.4",
+    "tag":  "v2.2.4",
+    "notes_url":  "https://weisscivitech.com/apps/autocad-excel-calc"
 }
