@@ -48,49 +48,131 @@ jobs:
           persist-credentials: false
 
       - name: Stage site files
-        # Windows runner: bash is Git Bash (GNU cp). Relative paths only, so
-        # MSYS does not rewrite them.
-        shell: bash
+        # This runner resolves `bash` to WindowsApps\bash.exe (WSL). The runner
+        # template passes the temp script path unquoted, so the backslashes are
+        # stripped (`C:UsersMaozactions-runner...sh`) and the script never starts.
+        # powershell's -Command single-quotes that path. Bypass covers a
+        # Restricted execution policy on a self-hosted Windows machine.
+        # Full path: Which("powershell") can hit the same WindowsApps stub.
+        shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \". '{0}'\""
         run: |
-          set -euo pipefail
-          rm -rf _site
-          mkdir -p _site
+          $ErrorActionPreference = 'Stop'
+          try {
+            $utf8Out = New-Object System.Text.UTF8Encoding $false
+            [Console]::OutputEncoding = $utf8Out
+            $OutputEncoding = $utf8Out
+          } catch {
+            # Log encoding only. Copying files does not depend on it.
+          }
 
-          # Tracked files only. Leave out workflows and the index builder.
-          # NUL-delimited so Hebrew names under files/ are copied intact.
-          # Parent directories are created in bash so this does not depend on
-          # dirname, and the log does not call find (Windows find.exe).
-          git ls-files -z | while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/*|tools/*) continue ;;
-            esac
-            case "$path" in
-              */*) mkdir -p -- "_site/${path%/*}" ;;
-            esac
-            cp -a -- "$path" "_site/$path"
-          done
+          $root = (Get-Location).ProviderPath
+          $site = Join-Path $root '_site'
+          if ([System.IO.Directory]::Exists($site)) {
+            [System.IO.Directory]::Delete($site, $true)
+          } elseif ([System.IO.File]::Exists($site)) {
+            [System.IO.File]::Delete($site)
+          }
+          [void][System.IO.Directory]::CreateDirectory($site)
 
-          if [ -e _site/.git ] || [ -e _site/.github ] || [ -e _site/tools ]; then
-            echo "excluded path was staged into _site" >&2
+          $gitCmd = 'C:\Program Files\Git\cmd\git.exe'
+          if (-not (Test-Path -LiteralPath $gitCmd)) {
+            $found = Get-Command git -ErrorAction SilentlyContinue
+            if ($found -and $found.Source) {
+              $gitCmd = $found.Source
+            } else {
+              [Console]::Error.WriteLine('git was not found')
+              exit 1
+            }
+          }
+
+          # Raw UTF-8 from git. Piping `git ls-files` through PowerShell would
+          # decode Hebrew names under files/ with the console code page.
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $gitCmd
+          $psi.Arguments = '-c core.quotepath=false ls-files -z'
+          $psi.WorkingDirectory = $root
+          $psi.UseShellExecute = $false
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.CreateNoWindow = $true
+          $utf8 = New-Object System.Text.UTF8Encoding $false
+          $psi.StandardOutputEncoding = $utf8
+          $psi.StandardErrorEncoding = $utf8
+          $proc = New-Object System.Diagnostics.Process
+          try {
+            $proc.StartInfo = $psi
+            [void]$proc.Start()
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+            $stdout = $proc.StandardOutput.ReadToEnd()
+            $stderr = $stderrTask.Result
+            [void]$proc.WaitForExit()
+            $code = $proc.ExitCode
+          } finally {
+            $proc.Dispose()
+          }
+          if ($code -ne 0) {
+            [Console]::Error.WriteLine("git ls-files exited ${code}: $stderr")
+            exit $code
+          }
+
+          $tracked = @($stdout -split "`0" | Where-Object { -not [string]::IsNullOrEmpty($_) })
+          if ($tracked.Count -eq 0) {
+            [Console]::Error.WriteLine('git ls-files returned no paths')
             exit 1
-          fi
+          }
 
-          echo "Staged site:"
-          missing=0
-          while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/*|tools/*) continue ;;
-            esac
-            if [ ! -f "_site/$path" ]; then
-              echo "not staged: $path" >&2
-              missing=1
+          function Test-ExcludedPath([string]$RepoRelative) {
+            $normalized = $RepoRelative -replace '\\', '/'
+            return $normalized.StartsWith('.github/', [System.StringComparison]::Ordinal) -or
+              $normalized.StartsWith('tools/', [System.StringComparison]::Ordinal)
+          }
+
+          function Get-RepoFullPath([string]$Base, [string]$RepoRelative) {
+            $full = $Base
+            foreach ($part in ($RepoRelative -split '[\\/]+')) {
+              if ([string]::IsNullOrEmpty($part) -or $part -eq '.') { continue }
+              $full = Join-Path $full $part
+            }
+            return $full
+          }
+
+          foreach ($path in $tracked) {
+            if (Test-ExcludedPath $path) { continue }
+            $source = Get-RepoFullPath $root $path
+            $dest = Get-RepoFullPath $site $path
+            $parent = Split-Path -Parent $dest
+            if ([string]::IsNullOrEmpty($parent)) {
+              [Console]::Error.WriteLine("not staged: $path")
+              exit 1
+            }
+            [void][System.IO.Directory]::CreateDirectory($parent)
+            [System.IO.File]::Copy($source, $dest, $true)
+          }
+
+          foreach ($name in @('.git', '.github', 'tools')) {
+            $candidate = Join-Path $site $name
+            if ([System.IO.Directory]::Exists($candidate) -or [System.IO.File]::Exists($candidate)) {
+              [Console]::Error.WriteLine('excluded path was staged into _site')
+              exit 1
+            }
+          }
+
+          Write-Output 'Staged site:'
+          $missing = $false
+          foreach ($path in $tracked) {
+            if (Test-ExcludedPath $path) { continue }
+            $dest = Get-RepoFullPath $site $path
+            if (-not [System.IO.File]::Exists($dest)) {
+              [Console]::Error.WriteLine("not staged: $path")
+              $missing = $true
               continue
-            fi
-            printf '%s\n' "_site/$path"
-          done < <(git ls-files -z)
-          if [ "$missing" -ne 0 ]; then
+            }
+            Write-Output ('_site/' + ($path -replace '\\', '/'))
+          }
+          if ($missing) {
             exit 1
-          fi
+          }
+          exit 0
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
