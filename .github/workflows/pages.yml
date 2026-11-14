@@ -187,8 +187,8 @@ jobs:
 
       - name: Archive the site
         # upload-pages-artifact runs tar through bash, which hangs on this
-        # runner. System32 tar.exe writes one uncompressed archive.
-        # --force-local stops bsdtar from treating C: as a remote host.
+        # runner. System32 tar.exe writes one uncompressed archive. That
+        # tar rejects --force-local; a Windows path is already local to it.
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -201,7 +201,7 @@ jobs:
           if (Test-Path -LiteralPath $archive) {
             Remove-Item -LiteralPath $archive -Force
           }
-          & $tar --force-local -cf $archive -C _site .
+          & $tar -cf $archive -C _site .
           if ($LASTEXITCODE -ne 0) {
             [Console]::Error.WriteLine("tar.exe exited $LASTEXITCODE")
             exit $LASTEXITCODE
@@ -218,7 +218,7 @@ jobs:
             exit 1
           }
           Write-Output 'archive entries:'
-          $entries = @(& $tar --force-local -tf $archive)
+          $entries = @(& $tar -tf $archive)
           if ($LASTEXITCODE -ne 0) {
             [Console]::Error.WriteLine("tar.exe -tf exited $LASTEXITCODE")
             exit $LASTEXITCODE
