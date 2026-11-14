@@ -48,13 +48,10 @@ jobs:
           persist-credentials: false
 
       - name: Stage site files
-        # This runner resolves `bash` to WindowsApps\bash.exe (WSL). The runner
-        # template passes the temp script path unquoted, so the backslashes are
-        # stripped (`C:UsersMaozactions-runner...sh`) and the script never starts.
-        # powershell's -Command single-quotes that path. Bypass covers a
-        # Restricted execution policy on a self-hosted Windows machine.
-        # Full path: Which("powershell") can hit the same WindowsApps stub.
-        shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \". '{0}'\""
+        # shell: bash is WindowsApps\bash.exe (WSL) here and never starts.
+        # Built-in powershell stores the step as a .ps1. A custom powershell.exe
+        # -Command template does not, so dot-sourcing never runs the script.
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           try {
@@ -157,7 +154,7 @@ jobs:
             }
           }
 
-          Write-Output 'Staged site:'
+          $copied = 0
           $missing = $false
           foreach ($path in $tracked) {
             if (Test-ExcludedPath $path) { continue }
@@ -167,9 +164,20 @@ jobs:
               $missing = $true
               continue
             }
-            Write-Output ('_site/' + ($path -replace '\\', '/'))
+            $copied++
           }
           if ($missing) {
+            exit 1
+          }
+
+          $stagedFiles = @(Get-ChildItem -LiteralPath $site -Recurse -File)
+          Write-Output ("copied {0} files" -f $copied)
+          Write-Output ("_site file count: {0}" -f $stagedFiles.Count)
+          foreach ($file in $stagedFiles) {
+            Write-Output $file.FullName
+          }
+          if ($stagedFiles.Count -eq 0) {
+            [Console]::Error.WriteLine('_site has zero files')
             exit 1
           }
           exit 0
@@ -178,12 +186,10 @@ jobs:
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Archive the site
-        # upload-pages-artifact runs tar through bash. On this runner bash is
-        # the WSL launcher, and that step hangs. System32 tar.exe writes one
-        # uncompressed archive with the site files at the root. --force-local
-        # stops bsdtar from reading the drive letter in the archive path as a
-        # remote host. No symlinks are staged, so the archive is not dereferenced.
-        shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \". '{0}'\""
+        # upload-pages-artifact runs tar through bash, which hangs on this
+        # runner. System32 tar.exe writes one uncompressed archive.
+        # --force-local stops bsdtar from treating C: as a remote host.
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $tar = 'C:\Windows\System32\tar.exe'
@@ -201,7 +207,28 @@ jobs:
             exit $LASTEXITCODE
           }
           if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
-            [Console]::Error.WriteLine('artifact.tar was not created')
+            [Console]::Error.WriteLine('artifact.tar is missing or empty')
+            exit 1
+          }
+          $item = Get-Item -LiteralPath $archive
+          Write-Output ("archive: {0}" -f $item.FullName)
+          Write-Output ("archive bytes: {0}" -f $item.Length)
+          if ($item.Length -le 0) {
+            [Console]::Error.WriteLine('artifact.tar is missing or empty')
+            exit 1
+          }
+          Write-Output 'archive entries:'
+          $entries = @(& $tar --force-local -tf $archive)
+          if ($LASTEXITCODE -ne 0) {
+            [Console]::Error.WriteLine("tar.exe -tf exited $LASTEXITCODE")
+            exit $LASTEXITCODE
+          }
+          $listed = @($entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+          foreach ($entry in $listed) {
+            Write-Output $entry
+          }
+          if ($listed.Count -eq 0) {
+            [Console]::Error.WriteLine('artifact.tar has no entries')
             exit 1
           }
           # upload-artifact@v4 does not find an absolute path under runner.temp
