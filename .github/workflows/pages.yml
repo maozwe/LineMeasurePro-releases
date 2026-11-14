@@ -48,57 +48,271 @@ jobs:
           persist-credentials: false
 
       - name: Stage site files
-        # Windows runner: bash is Git Bash (GNU cp). Relative paths only, so
-        # MSYS does not rewrite them.
-        shell: bash
+        # shell: bash is WindowsApps\bash.exe (WSL) here and never starts.
+        # Built-in powershell stores the step as a .ps1. A custom powershell.exe
+        # -Command template does not, so dot-sourcing never runs the script.
+        shell: powershell
         run: |
-          set -euo pipefail
-          rm -rf _site
-          mkdir -p _site
+          $ErrorActionPreference = 'Stop'
+          try {
+            $utf8Out = New-Object System.Text.UTF8Encoding $false
+            [Console]::OutputEncoding = $utf8Out
+            $OutputEncoding = $utf8Out
+          } catch {
+            # Log encoding only. Copying files does not depend on it.
+          }
 
-          # Tracked files only. Leave out workflows and the index builder.
-          # NUL-delimited so Hebrew names under files/ are copied intact.
-          # Parent directories are created in bash so this does not depend on
-          # dirname, and the log does not call find (Windows find.exe).
-          git ls-files -z | while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/*|tools/*) continue ;;
-            esac
-            case "$path" in
-              */*) mkdir -p -- "_site/${path%/*}" ;;
-            esac
-            cp -a -- "$path" "_site/$path"
-          done
+          $root = (Get-Location).ProviderPath
+          $site = Join-Path $root '_site'
+          if ([System.IO.Directory]::Exists($site)) {
+            [System.IO.Directory]::Delete($site, $true)
+          } elseif ([System.IO.File]::Exists($site)) {
+            [System.IO.File]::Delete($site)
+          }
+          [void][System.IO.Directory]::CreateDirectory($site)
 
-          if [ -e _site/.git ] || [ -e _site/.github ] || [ -e _site/tools ]; then
-            echo "excluded path was staged into _site" >&2
+          $gitCmd = 'C:\Program Files\Git\cmd\git.exe'
+          if (-not (Test-Path -LiteralPath $gitCmd)) {
+            $found = Get-Command git -ErrorAction SilentlyContinue
+            if ($found -and $found.Source) {
+              $gitCmd = $found.Source
+            } else {
+              [Console]::Error.WriteLine('git was not found')
+              exit 1
+            }
+          }
+
+          # Raw UTF-8 from git. Piping `git ls-files` through PowerShell would
+          # decode Hebrew names under files/ with the console code page.
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $gitCmd
+          $psi.Arguments = '-c core.quotepath=false ls-files -z'
+          $psi.WorkingDirectory = $root
+          $psi.UseShellExecute = $false
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.CreateNoWindow = $true
+          $utf8 = New-Object System.Text.UTF8Encoding $false
+          $psi.StandardOutputEncoding = $utf8
+          $psi.StandardErrorEncoding = $utf8
+          $proc = New-Object System.Diagnostics.Process
+          try {
+            $proc.StartInfo = $psi
+            [void]$proc.Start()
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+            $stdout = $proc.StandardOutput.ReadToEnd()
+            $stderr = $stderrTask.Result
+            [void]$proc.WaitForExit()
+            $code = $proc.ExitCode
+          } finally {
+            $proc.Dispose()
+          }
+          if ($code -ne 0) {
+            [Console]::Error.WriteLine("git ls-files exited ${code}: $stderr")
+            exit $code
+          }
+
+          $tracked = @($stdout -split "`0" | Where-Object { -not [string]::IsNullOrEmpty($_) })
+          if ($tracked.Count -eq 0) {
+            [Console]::Error.WriteLine('git ls-files returned no paths')
             exit 1
-          fi
+          }
 
-          echo "Staged site:"
-          missing=0
-          while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/*|tools/*) continue ;;
-            esac
-            if [ ! -f "_site/$path" ]; then
-              echo "not staged: $path" >&2
-              missing=1
+          function Test-ExcludedPath([string]$RepoRelative) {
+            $normalized = $RepoRelative -replace '\\', '/'
+            return $normalized.StartsWith('.github/', [System.StringComparison]::Ordinal) -or
+              $normalized.StartsWith('tools/', [System.StringComparison]::Ordinal)
+          }
+
+          function Get-RepoFullPath([string]$Base, [string]$RepoRelative) {
+            $full = $Base
+            foreach ($part in ($RepoRelative -split '[\\/]+')) {
+              if ([string]::IsNullOrEmpty($part) -or $part -eq '.') { continue }
+              $full = Join-Path $full $part
+            }
+            return $full
+          }
+
+          foreach ($path in $tracked) {
+            if (Test-ExcludedPath $path) { continue }
+            $source = Get-RepoFullPath $root $path
+            $dest = Get-RepoFullPath $site $path
+            $parent = Split-Path -Parent $dest
+            if ([string]::IsNullOrEmpty($parent)) {
+              [Console]::Error.WriteLine("not staged: $path")
+              exit 1
+            }
+            [void][System.IO.Directory]::CreateDirectory($parent)
+            [System.IO.File]::Copy($source, $dest, $true)
+          }
+
+          foreach ($name in @('.git', '.github', 'tools')) {
+            $candidate = Join-Path $site $name
+            if ([System.IO.Directory]::Exists($candidate) -or [System.IO.File]::Exists($candidate)) {
+              [Console]::Error.WriteLine('excluded path was staged into _site')
+              exit 1
+            }
+          }
+
+          $copied = 0
+          $missing = $false
+          foreach ($path in $tracked) {
+            if (Test-ExcludedPath $path) { continue }
+            $dest = Get-RepoFullPath $site $path
+            if (-not [System.IO.File]::Exists($dest)) {
+              [Console]::Error.WriteLine("not staged: $path")
+              $missing = $true
               continue
-            fi
-            printf '%s\n' "_site/$path"
-          done < <(git ls-files -z)
-          if [ "$missing" -ne 0 ]; then
+            }
+            $copied++
+          }
+          if ($missing) {
             exit 1
-          fi
+          }
+
+          $stagedFiles = @(Get-ChildItem -LiteralPath $site -Recurse -File)
+          Write-Output ("copied {0} files" -f $copied)
+          Write-Output ("_site file count: {0}" -f $stagedFiles.Count)
+          foreach ($file in $stagedFiles) {
+            Write-Output $file.FullName
+          }
+          if ($stagedFiles.Count -eq 0) {
+            [Console]::Error.WriteLine('_site has zero files')
+            exit 1
+          }
+          exit 0
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
+      - name: Archive the site
+        # upload-pages-artifact runs tar through bash, which hangs on this
+        # runner, and System32 tar.exe cannot stat the Hebrew folder names
+        # under files/. The archive is written in PowerShell/.NET as ustar,
+        # with a PAX header carrying each non-ASCII path in UTF-8.
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Get-Location).ProviderPath
+          $site = Join-Path $root '_site'
+          $publish = Join-Path $root 'artifact.tar'
+          if ([System.IO.File]::Exists($publish)) { [System.IO.File]::Delete($publish) }
+          if (-not [System.IO.Directory]::Exists($site)) {
+            [Console]::Error.WriteLine('_site is missing')
+            exit 1
+          }
+
+          $utf8 = New-Object System.Text.UTF8Encoding $false
+          $ascii = [System.Text.Encoding]::ASCII
+          $epoch = New-Object System.DateTime 1970, 1, 1, 0, 0, 0, ([System.DateTimeKind]::Utc)
+
+          function Write-Field([byte[]]$Header, [int]$Offset, [int]$Length, [string]$Text) {
+            $bytes = $ascii.GetBytes($Text)
+            if ($bytes.Length -gt $Length) { throw "tar field overflow: $Text" }
+            [System.Array]::Copy($bytes, 0, $Header, $Offset, $bytes.Length)
+          }
+
+          function Get-Octal([long]$Value, [int]$Digits) {
+            return [System.Convert]::ToString($Value, 8).PadLeft($Digits, '0')
+          }
+
+          function New-Header([string]$Name, [long]$Size, [long]$Mtime, [char]$Type) {
+            $h = New-Object byte[] 512
+            Write-Field $h 0 100 $Name
+            Write-Field $h 100 8 ((Get-Octal 420 7) + "`0")
+            Write-Field $h 108 8 ((Get-Octal 0 7) + "`0")
+            Write-Field $h 116 8 ((Get-Octal 0 7) + "`0")
+            Write-Field $h 124 12 ((Get-Octal $Size 11) + "`0")
+            Write-Field $h 136 12 ((Get-Octal $Mtime 11) + "`0")
+            Write-Field $h 148 8 '        '
+            $h[156] = [byte][char]$Type
+            Write-Field $h 257 6 "ustar`0"
+            Write-Field $h 263 2 '00'
+            $sum = 0
+            foreach ($b in $h) { $sum += $b }
+            Write-Field $h 148 8 ((Get-Octal $sum 6) + "`0 ")
+            return ,$h
+          }
+
+          function Write-Padding([System.IO.Stream]$Out, [long]$Size) {
+            $rem = $Size % 512
+            if ($rem -ne 0) {
+              $pad = New-Object byte[] (512 - $rem)
+              $Out.Write($pad, 0, $pad.Length)
+            }
+          }
+
+          function New-PaxRecord([string]$Key, [string]$Value) {
+            $body = $utf8.GetBytes(" $Key=$Value`n")
+            $len = $body.Length + 1
+            while ($true) {
+              $total = $body.Length + $len.ToString().Length
+              if ($total -eq $len) { break }
+              $len = $total
+            }
+            return ,$utf8.GetBytes("$len $Key=$Value`n")
+          }
+
+          # Entry names are "./" + the path inside _site, the same layout
+          # upload-pages-artifact produces with "tar -C _site .".
+          $files = @(Get-ChildItem -LiteralPath $site -Recurse -File | Sort-Object FullName)
+          if ($files.Count -eq 0) {
+            [Console]::Error.WriteLine('_site has zero files')
+            exit 1
+          }
+
+          $out = [System.IO.File]::Open($publish, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
+          $count = 0
+          $paxCount = 0
+          try {
+            foreach ($file in $files) {
+              $rel = './' + ($file.FullName.Substring($site.Length).TrimStart('\', '/') -replace '\\', '/')
+              $nameBytes = $utf8.GetBytes($rel)
+              $isAscii = ($nameBytes.Length -eq $rel.Length)
+              $mtime = [long][System.Math]::Floor(($file.LastWriteTimeUtc - $epoch).TotalSeconds)
+              if ($mtime -lt 0) { $mtime = 0 }
+              $headerName = $rel
+              if (-not $isAscii -or $nameBytes.Length -gt 99) {
+                # PAX extended header carries the full UTF-8 path (Hebrew names).
+                $pax = New-PaxRecord 'path' $rel
+                $paxName = 'PaxHeaders/' + $count
+                $ph = New-Header $paxName $pax.Length $mtime 'x'
+                $out.Write($ph, 0, 512)
+                $out.Write($pax, 0, $pax.Length)
+                Write-Padding $out $pax.Length
+                $headerName = 'pax-entry-' + $count
+                $paxCount++
+              }
+              $h = New-Header $headerName $file.Length $mtime '0'
+              $out.Write($h, 0, 512)
+              $in = [System.IO.File]::OpenRead($file.FullName)
+              try { $in.CopyTo($out) } finally { $in.Dispose() }
+              Write-Padding $out $file.Length
+              $count++
+            }
+            $end = New-Object byte[] 1024
+            $out.Write($end, 0, 1024)
+          } finally {
+            $out.Dispose()
+          }
+
+          $item = Get-Item -LiteralPath $publish
+          Write-Output ("archive: {0}" -f $item.FullName)
+          Write-Output ("archive bytes: {0}" -f $item.Length)
+          Write-Output ("archive entries: {0} files, {1} with PAX UTF-8 names" -f $count, $paxCount)
+          if ($count -ne $files.Count -or $item.Length -le 1024) {
+            [Console]::Error.WriteLine('artifact.tar is incomplete')
+            exit 1
+          }
+          exit 0
+
       - name: Upload the site
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        uses: actions/upload-artifact@v4
         with:
-          path: _site
+          name: github-pages
+          path: artifact.tar
+          retention-days: 1
+          if-no-files-found: error
 
   deploy:
     name: Deploy to GitHub Pages
