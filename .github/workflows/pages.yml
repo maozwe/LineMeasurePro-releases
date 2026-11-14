@@ -200,17 +200,23 @@ jobs:
             [Console]::Error.WriteLine("tar.exe exited $LASTEXITCODE")
             exit $LASTEXITCODE
           }
-          if (-not (Test-Path -LiteralPath $archive)) {
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
             [Console]::Error.WriteLine('artifact.tar was not created')
             exit 1
           }
+          # upload-artifact@v4 does not find an absolute path under runner.temp
+          # on this Windows runner (run 43562864541). The workspace copy is the
+          # same artifact.tar; a single-file upload still stores it at the
+          # artifact root, which is what deploy-pages reads.
+          $publish = Join-Path (Get-Location).ProviderPath 'artifact.tar'
+          [System.IO.File]::Copy($archive, $publish, $true)
           exit 0
 
       - name: Upload the site
         uses: actions/upload-artifact@v4
         with:
           name: github-pages
-          path: ${{ runner.temp }}\artifact.tar
+          path: artifact.tar
           retention-days: 1
           if-no-files-found: error
 
