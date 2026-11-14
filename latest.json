@@ -1,12 +1,12 @@
 {
-    "version":  "1.0.20",
-    "tag":  "v1.0.20",
-    "notes_url":  "https://weisscivitech.com/apps/autocad-excel-calc",
     "artifacts":  {
                       "installer":  {
-                                        "url":  "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.0.20/download?platform=windows",
-                                        "sha256":  "fa8d21b6e59ab35d3efe493655b00313e8dfb79ef9bcbb2b4296236f2aca2bed",
-                                        "size":  49166550
+                                        "url":  "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.0.21/download?platform=windows",
+                                        "sha256":  "fe57f4671835f133bc0f713f2a9672f854b93fd1d926b86acfeac97d89f67bf8",
+                                        "size":  49149177
                                     }
-                  }
+                  },
+    "version":  "1.0.21",
+    "tag":  "v1.0.21",
+    "notes_url":  "https://weisscivitech.com/apps/autocad-excel-calc"
 }
