@@ -177,10 +177,42 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
+      - name: Archive the site
+        # upload-pages-artifact runs tar through bash. On this runner bash is
+        # the WSL launcher, and that step hangs. System32 tar.exe writes one
+        # uncompressed archive with the site files at the root. --force-local
+        # stops bsdtar from reading the drive letter in the archive path as a
+        # remote host. No symlinks are staged, so the archive is not dereferenced.
+        shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \". '{0}'\""
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tar = 'C:\Windows\System32\tar.exe'
+          $archive = '${{ runner.temp }}\artifact.tar'
+          if (-not (Test-Path -LiteralPath $tar)) {
+            [Console]::Error.WriteLine('tar.exe was not found')
+            exit 1
+          }
+          if (Test-Path -LiteralPath $archive) {
+            Remove-Item -LiteralPath $archive -Force
+          }
+          & $tar --force-local -cf $archive -C _site .
+          if ($LASTEXITCODE -ne 0) {
+            [Console]::Error.WriteLine("tar.exe exited $LASTEXITCODE")
+            exit $LASTEXITCODE
+          }
+          if (-not (Test-Path -LiteralPath $archive)) {
+            [Console]::Error.WriteLine('artifact.tar was not created')
+            exit 1
+          }
+          exit 0
+
       - name: Upload the site
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        uses: actions/upload-artifact@v4
         with:
-          path: _site
+          name: github-pages
+          path: ${{ runner.temp }}\artifact.tar
+          retention-days: 1
+          if-no-files-found: error
 
   deploy:
     name: Deploy to GitHub Pages
