@@ -187,76 +187,123 @@ jobs:
 
       - name: Archive the site
         # upload-pages-artifact runs tar through bash, which hangs on this
-        # runner. System32 tar.exe writes the archive. It rejects
-        # --force-local, and "tar -cf C:\...\artifact.tar -C _site ."
-        # access-violates (exit -1073741819). A relative archive path and
-        # explicit file names avoid both.
+        # runner, and System32 tar.exe cannot stat the Hebrew folder names
+        # under files/. The archive is written in PowerShell/.NET as ustar,
+        # with a PAX header carrying each non-ASCII path in UTF-8.
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $tar = 'C:\Windows\System32\tar.exe'
           $root = (Get-Location).ProviderPath
           $site = Join-Path $root '_site'
           $publish = Join-Path $root 'artifact.tar'
-          $runnerArchive = '${{ runner.temp }}\artifact.tar'
-          if (-not (Test-Path -LiteralPath $tar)) {
-            [Console]::Error.WriteLine('tar.exe was not found')
+          if ([System.IO.File]::Exists($publish)) { [System.IO.File]::Delete($publish) }
+          if (-not [System.IO.Directory]::Exists($site)) {
+            [Console]::Error.WriteLine('_site is missing')
             exit 1
           }
-          foreach ($path in @($publish, $runnerArchive)) {
-            if (Test-Path -LiteralPath $path) {
-              Remove-Item -LiteralPath $path -Force
+
+          $utf8 = New-Object System.Text.UTF8Encoding $false
+          $ascii = [System.Text.Encoding]::ASCII
+          $epoch = New-Object System.DateTime 1970, 1, 1, 0, 0, 0, ([System.DateTimeKind]::Utc)
+
+          function Write-Field([byte[]]$Header, [int]$Offset, [int]$Length, [string]$Text) {
+            $bytes = $ascii.GetBytes($Text)
+            if ($bytes.Length -gt $Length) { throw "tar field overflow: $Text" }
+            [System.Array]::Copy($bytes, 0, $Header, $Offset, $bytes.Length)
+          }
+
+          function Get-Octal([long]$Value, [int]$Digits) {
+            return [System.Convert]::ToString($Value, 8).PadLeft($Digits, '0')
+          }
+
+          function New-Header([string]$Name, [long]$Size, [long]$Mtime, [char]$Type) {
+            $h = New-Object byte[] 512
+            Write-Field $h 0 100 $Name
+            Write-Field $h 100 8 ((Get-Octal 420 7) + "`0")
+            Write-Field $h 108 8 ((Get-Octal 0 7) + "`0")
+            Write-Field $h 116 8 ((Get-Octal 0 7) + "`0")
+            Write-Field $h 124 12 ((Get-Octal $Size 11) + "`0")
+            Write-Field $h 136 12 ((Get-Octal $Mtime 11) + "`0")
+            Write-Field $h 148 8 '        '
+            $h[156] = [byte][char]$Type
+            Write-Field $h 257 6 "ustar`0"
+            Write-Field $h 263 2 '00'
+            $sum = 0
+            foreach ($b in $h) { $sum += $b }
+            Write-Field $h 148 8 ((Get-Octal $sum 6) + "`0 ")
+            return ,$h
+          }
+
+          function Write-Padding([System.IO.Stream]$Out, [long]$Size) {
+            $rem = $Size % 512
+            if ($rem -ne 0) {
+              $pad = New-Object byte[] (512 - $rem)
+              $Out.Write($pad, 0, $pad.Length)
             }
           }
 
-          $files = @(Get-ChildItem -LiteralPath $site -Recurse -File | ForEach-Object {
-            $_.FullName.Substring($site.Length).TrimStart('\', '/') -replace '\\', '/'
-          })
+          function New-PaxRecord([string]$Key, [string]$Value) {
+            $body = $utf8.GetBytes(" $Key=$Value`n")
+            $len = $body.Length + 1
+            while ($true) {
+              $total = $body.Length + $len.ToString().Length
+              if ($total -eq $len) { break }
+              $len = $total
+            }
+            return ,$utf8.GetBytes("$len $Key=$Value`n")
+          }
+
+          # Entry names are "./" + the path inside _site, the same layout
+          # upload-pages-artifact produces with "tar -C _site .".
+          $files = @(Get-ChildItem -LiteralPath $site -Recurse -File | Sort-Object FullName)
           if ($files.Count -eq 0) {
             [Console]::Error.WriteLine('_site has zero files')
             exit 1
           }
 
-          Push-Location -LiteralPath $site
+          $out = [System.IO.File]::Open($publish, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
+          $count = 0
+          $paxCount = 0
           try {
-            & $tar -cf '..\artifact.tar' @files
-            $code = $LASTEXITCODE
+            foreach ($file in $files) {
+              $rel = './' + ($file.FullName.Substring($site.Length).TrimStart('\', '/') -replace '\\', '/')
+              $nameBytes = $utf8.GetBytes($rel)
+              $isAscii = ($nameBytes.Length -eq $rel.Length)
+              $mtime = [long][System.Math]::Floor(($file.LastWriteTimeUtc - $epoch).TotalSeconds)
+              if ($mtime -lt 0) { $mtime = 0 }
+              $headerName = $rel
+              if (-not $isAscii -or $nameBytes.Length -gt 99) {
+                # PAX extended header carries the full UTF-8 path (Hebrew names).
+                $pax = New-PaxRecord 'path' $rel
+                $paxName = 'PaxHeaders/' + $count
+                $ph = New-Header $paxName $pax.Length $mtime 'x'
+                $out.Write($ph, 0, 512)
+                $out.Write($pax, 0, $pax.Length)
+                Write-Padding $out $pax.Length
+                $headerName = 'pax-entry-' + $count
+                $paxCount++
+              }
+              $h = New-Header $headerName $file.Length $mtime '0'
+              $out.Write($h, 0, 512)
+              $in = [System.IO.File]::OpenRead($file.FullName)
+              try { $in.CopyTo($out) } finally { $in.Dispose() }
+              Write-Padding $out $file.Length
+              $count++
+            }
+            $end = New-Object byte[] 1024
+            $out.Write($end, 0, 1024)
           } finally {
-            Pop-Location
+            $out.Dispose()
           }
-          if ($code -ne 0) {
-            [Console]::Error.WriteLine("tar.exe exited $code")
-            exit 1
-          }
-          if (-not (Test-Path -LiteralPath $publish -PathType Leaf)) {
-            [Console]::Error.WriteLine('artifact.tar is missing or empty')
-            exit 1
-          }
+
           $item = Get-Item -LiteralPath $publish
           Write-Output ("archive: {0}" -f $item.FullName)
           Write-Output ("archive bytes: {0}" -f $item.Length)
-          if ($item.Length -le 0) {
-            [Console]::Error.WriteLine('artifact.tar is missing or empty')
+          Write-Output ("archive entries: {0} files, {1} with PAX UTF-8 names" -f $count, $paxCount)
+          if ($count -ne $files.Count -or $item.Length -le 1024) {
+            [Console]::Error.WriteLine('artifact.tar is incomplete')
             exit 1
           }
-          Write-Output 'archive entries:'
-          $entries = @(& $tar -tf '.\artifact.tar')
-          if ($LASTEXITCODE -ne 0) {
-            [Console]::Error.WriteLine("tar.exe -tf exited $LASTEXITCODE")
-            exit 1
-          }
-          $listed = @($entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-          foreach ($entry in $listed) {
-            Write-Output $entry
-          }
-          if ($listed.Count -eq 0) {
-            [Console]::Error.WriteLine('artifact.tar has no entries')
-            exit 1
-          }
-          # upload-artifact@v4 does not find an absolute path under runner.temp
-          # on this Windows runner. The workspace file above is what it uploads.
-          # Keep a copy at runner.temp as well.
-          [System.IO.File]::Copy($publish, $runnerArchive, $true)
           exit 0
 
       - name: Upload the site
