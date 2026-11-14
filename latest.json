@@ -1,12 +1,14 @@
 {
-  "version": "1.0.26",
-  "tag": "v1.0.26",
-  "notes_url": "https://weisscivitech.com/apps/autocad-excel-calc",
-  "artifacts": {
-    "installer": {
-      "url": "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.0.26/download?platform=windows",
-      "sha256": "aed4404a8453906f320999aba123de2699a1b7eea7920801eb67a821edfff81c",
-      "size": 49155294
-    }
-  }
+    "artifacts":  {
+                      "installer":  {
+                                        "url":  "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/1.0.29/download?platform=windows",
+                                        "filename":  "WeissCiviTech-Setup-1.0.29.exe",
+                                        "size":  49157654,
+                                        "sha256":  "48385d0655b4601b2eda7b3a18e8cacea403f8d7c332ab548f90a44c99986a2f"
+                                    }
+                  },
+    "published_at":  "2026-11-14T15:14:03.942Z",
+    "version":  "1.0.29",
+    "tag":  "v1.0.29",
+    "notes_url":  "https://weisscivitech.com/apps/autocad-excel-calc"
 }
