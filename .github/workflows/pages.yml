@@ -187,30 +187,52 @@ jobs:
 
       - name: Archive the site
         # upload-pages-artifact runs tar through bash, which hangs on this
-        # runner. System32 tar.exe writes one uncompressed archive. That
-        # tar rejects --force-local; a Windows path is already local to it.
+        # runner. System32 tar.exe writes the archive. It rejects
+        # --force-local, and "tar -cf C:\...\artifact.tar -C _site ."
+        # access-violates (exit -1073741819). A relative archive path and
+        # explicit file names avoid both.
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $tar = 'C:\Windows\System32\tar.exe'
-          $archive = '${{ runner.temp }}\artifact.tar'
+          $root = (Get-Location).ProviderPath
+          $site = Join-Path $root '_site'
+          $publish = Join-Path $root 'artifact.tar'
+          $runnerArchive = '${{ runner.temp }}\artifact.tar'
           if (-not (Test-Path -LiteralPath $tar)) {
             [Console]::Error.WriteLine('tar.exe was not found')
             exit 1
           }
-          if (Test-Path -LiteralPath $archive) {
-            Remove-Item -LiteralPath $archive -Force
+          foreach ($path in @($publish, $runnerArchive)) {
+            if (Test-Path -LiteralPath $path) {
+              Remove-Item -LiteralPath $path -Force
+            }
           }
-          & $tar -cf $archive -C _site .
-          if ($LASTEXITCODE -ne 0) {
-            [Console]::Error.WriteLine("tar.exe exited $LASTEXITCODE")
-            exit $LASTEXITCODE
+
+          $files = @(Get-ChildItem -LiteralPath $site -Recurse -File | ForEach-Object {
+            $_.FullName.Substring($site.Length).TrimStart('\', '/') -replace '\\', '/'
+          })
+          if ($files.Count -eq 0) {
+            [Console]::Error.WriteLine('_site has zero files')
+            exit 1
           }
-          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
+
+          Push-Location -LiteralPath $site
+          try {
+            & $tar -cf '..\artifact.tar' @files
+            $code = $LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+          if ($code -ne 0) {
+            [Console]::Error.WriteLine("tar.exe exited $code")
+            exit 1
+          }
+          if (-not (Test-Path -LiteralPath $publish -PathType Leaf)) {
             [Console]::Error.WriteLine('artifact.tar is missing or empty')
             exit 1
           }
-          $item = Get-Item -LiteralPath $archive
+          $item = Get-Item -LiteralPath $publish
           Write-Output ("archive: {0}" -f $item.FullName)
           Write-Output ("archive bytes: {0}" -f $item.Length)
           if ($item.Length -le 0) {
@@ -218,10 +240,10 @@ jobs:
             exit 1
           }
           Write-Output 'archive entries:'
-          $entries = @(& $tar -tf $archive)
+          $entries = @(& $tar -tf '.\artifact.tar')
           if ($LASTEXITCODE -ne 0) {
             [Console]::Error.WriteLine("tar.exe -tf exited $LASTEXITCODE")
-            exit $LASTEXITCODE
+            exit 1
           }
           $listed = @($entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
           foreach ($entry in $listed) {
@@ -232,11 +254,9 @@ jobs:
             exit 1
           }
           # upload-artifact@v4 does not find an absolute path under runner.temp
-          # on this Windows runner (run 43562864541). The workspace copy is the
-          # same artifact.tar; a single-file upload still stores it at the
-          # artifact root, which is what deploy-pages reads.
-          $publish = Join-Path (Get-Location).ProviderPath 'artifact.tar'
-          [System.IO.File]::Copy($archive, $publish, $true)
+          # on this Windows runner. The workspace file above is what it uploads.
+          # Keep a copy at runner.temp as well.
+          [System.IO.File]::Copy($publish, $runnerArchive, $true)
           exit 0
 
       - name: Upload the site
