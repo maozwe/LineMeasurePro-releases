@@ -1,14 +1,14 @@
 {
     "artifacts":  {
                       "zip":  {
-                                  "url":  "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.2.10/download?platform=linemeasurepro",
-                                  "filename":  "LineMeasurePro-2.2.10.zip",
-                                  "size":  17482733,
-                                  "sha256":  "8df3ed4791c47ee6455b6b0557b53f0b6384651959e01a9be9cece458285fe47"
+                                  "url":  "https://api.weisscivitech.com/api/v1/storefront/apps/autocad-excel-calc/releases/2.2.11/download?platform=linemeasurepro",
+                                  "filename":  "LineMeasurePro-2.2.11.zip",
+                                  "size":  17479105,
+                                  "sha256":  "9ebe862c49725f8f6c2ade1fb6795fc6530f9635c7fd13d63c5884fc0a92865c"
                               }
                   },
-    "published_at":  "2026-11-14T14:38:05.214Z",
-    "version":  "2.2.10",
-    "tag":  "v2.2.10",
+    "published_at":  "2026-11-15T17:43:46.447Z",
+    "version":  "2.2.11",
+    "tag":  "v2.2.11",
     "notes_url":  "https://weisscivitech.com/apps/autocad-excel-calc"
 }
